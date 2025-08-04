@@ -5,16 +5,27 @@ set -euxo pipefail
 # This script contains hardcoded values from model_configs/benchmarking/DeepSeek-V2-Lite.yaml
 # and runtime_configs/benchmarking/runtime.conf and common.conf
 
+# Parse command line arguments for HOME_DIR
+HOME_DIR="/home/$USER"  # default value
+for arg in "$@"; do
+  case $arg in
+    --home=*)
+      HOME_DIR="${arg#*=}"
+      shift
+      ;;
+  esac
+done
+
 # Basic configuration
 export MODEL="DeepSeek-V2-Lite"
 export DATASET="slimpajama_15k"
 export WORKSPACE=$(dirname "$(readlink -f "$0")")
 export CLUSTER="todoMast"
 export MCORE_RELEASE_VERSION="0.14"
-export MEGATRON_PATH="/home/dxie/Megatron-LM"
+export MEGATRON_PATH=$HOME_DIR/"Megatron-LM"
 
 
-export DATA_PATH="/home/dxie/datasets/slimpajama_15k/slimpajama_15k_text_document"
+export DATA_PATH=$HOME_DIR/"datasets/slimpajama_15k/slimpajama_15k_text_document"
 export TOKENIZER_TYPE="HuggingFaceTokenizer"
 # export TOKENIZER_MODEL="/home/dxie/datasets/slimpajama_15k/tokenizer"
 
