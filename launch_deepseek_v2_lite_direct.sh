@@ -17,17 +17,20 @@ for arg in "$@"; do
 done
 
 # Basic configuration
-export MODEL="DeepSeek-V2-Lite"
-export DATASET="slimpajama_15k"
+export MODEL="DeepSeek-V2"
+# export DATASET="slimpajama_15k"
+export DATASET="wikitext"
 export WORKSPACE=$(dirname "$(readlink -f "$0")")
 export CLUSTER="todoMast"
 export MCORE_RELEASE_VERSION="0.14"
 export MEGATRON_PATH=$HOME_DIR/"Megatron-LM"
 
 
-export DATA_PATH=$HOME_DIR/"datasets/slimpajama_15k/slimpajama_15k_text_document"
+# export DATA_PATH=$HOME_DIR/"datasets/slimpajama_15k/slimpajama_15k_text_document"
+export DATA_PATH=$HOME_DIR/"datasets/wikitext_full/wikitext_text_document"
 export TOKENIZER_TYPE="HuggingFaceTokenizer"
-# export TOKENIZER_MODEL="/home/dxie/datasets/slimpajama_15k/tokenizer"
+export TOKENIZER_MODEL="$HOME/models/deepseek-v2/tokenizer"   # if load from local
+# export TOKENIZER_MODEL="deepseek-ai/DeepSeek-V2"    # if pulling from hugging face
 
 # Parallelism configurations (from runtime.conf DeepSeek-V2-Lite config)
 export TP=1
@@ -63,9 +66,9 @@ export PROFILE=0
 export PR="bf16"
 
 # Paths
-export RUN_NAME="DeepSeek v2 Lite"
+export RUN_NAME="DeepSeek v2"
 # export DATA_PATH="${DATA_PATH:-/home/less/datasets/slimpajama_15k/slimpajama_text_document}"
-export TOKENIZER_MODEL="deepseek-ai/DeepSeek-V2"
+
 export OUTPUT_PATH="${OUTPUT_PATH:-${WORKSPACE}/outputs}"
 export LOAD_PATH="${LOAD_PATH:-}"
 
@@ -185,7 +188,7 @@ TRAINING_PARAMS+=" --log-throughput"
 TRAINING_PARAMS+=" --log-interval 1"
 TRAINING_PARAMS+=" --tensorboard-dir ${OUTPUT_PATH}/tensorboard"
 TRAINING_PARAMS+=" --wandb-project ${WANDB_PROJECT}"
-TRAINING_PARAMS+=" --wandb-exp-name DeepSeek-V2-Lite-TP${TP}PP${PP}EP${EP}CP${CP}VPP${VPP}-MBS${MBS}GBS${GBS}-${COMMENT}"
+TRAINING_PARAMS+=" --wandb-exp-name DeepSeek-V2-TP${TP}PP${PP}EP${EP}CP${CP}VPP${VPP}-MBS${MBS}GBS${GBS}-${COMMENT}"
 TRAINING_PARAMS+=" --bf16"
 
 # Add overlapping parameters (since A2A_OVERLAP is not set, use default overlap settings)
@@ -213,7 +216,7 @@ mkdir -p ${LOCAL_LOGS} || {
 TIMESTAMP=$(date +'%y%m%d_%H%M%S')
 LOG_FILE="${LOCAL_LOGS}/${MODEL}-${RUN_NAME// /-}-${TIMESTAMP}.log"
 
-echo "Starting DeepSeek V2 Lite direct run..."
+echo "Starting DeepSeek V2 direct run..."
 echo "Model: ${MODEL}"
 echo "Run Name: ${RUN_NAME}"
 echo "Log file: ${LOG_FILE}"
@@ -236,4 +239,4 @@ cd "${MEGATRON_PATH}"
 echo "Running directly on host system"
 eval "${TRAINING_CMD}" 2>&1 | tee "${LOG_FILE}"
 
-echo "DeepSeek V2 Lite training completed. Log saved to: ${LOG_FILE}"
+echo "DeepSeek V2 training completed. Log saved to: ${LOG_FILE}"
