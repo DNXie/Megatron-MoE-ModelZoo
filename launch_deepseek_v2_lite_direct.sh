@@ -5,12 +5,17 @@ set -euxo pipefail
 # This script contains hardcoded values from model_configs/benchmarking/DeepSeek-V2-Lite.yaml
 # and runtime_configs/benchmarking/runtime.conf and common.conf
 
-# Parse command line arguments for HOME_DIR
+# Parse command line arguments for HOME_DIR and MAST flag
 HOME_DIR="/home/$USER"  # default value
+DISABLE_WANDB=false     # default: wandb enabled
 for arg in "$@"; do
   case $arg in
     --home=*)
       HOME_DIR="${arg#*=}"
+      shift
+      ;;
+    --mast)
+      DISABLE_WANDB=true
       shift
       ;;
   esac
@@ -29,7 +34,7 @@ export MEGATRON_PATH=$HOME_DIR/"Megatron-LM"
 # export DATA_PATH=$HOME_DIR/"datasets/slimpajama_15k/slimpajama_15k_text_document"
 export DATA_PATH=$HOME_DIR/"datasets/wikitext_full/wikitext_text_document"
 export TOKENIZER_TYPE="HuggingFaceTokenizer"
-export TOKENIZER_MODEL="$HOME/models/deepseek-v2/tokenizer"   # if load from local
+export TOKENIZER_MODEL="$HOME_DIR/models/deepseek-v2/tokenizer"   # if load from local
 # export TOKENIZER_MODEL="deepseek-ai/DeepSeek-V2"    # if pulling from hugging face
 
 # Parallelism configurations (from runtime.conf DeepSeek-V2-Lite config)
@@ -46,9 +51,16 @@ export GBS=512
 # Model architecture configurations
 export NUM_LAYERS=27
 
+# # MoE configurations
+# export MOE_TOKEN_DISPATCHER="alltoall"
+# export MOE_GROUPED_GEMM="true"
+
 # MoE configurations
-export MOE_TOKEN_DISPATCHER="alltoall"
+export MOE_TOKEN_DISPATCHER="flex"  # [flex, alltoall, allgather]
 export MOE_GROUPED_GEMM="true"
+export MOE_ENABLE_DEEPEP="true"  # requires flex dispatcher
+export MOE_DEEPEP_NUM_SMS=32  # Number of SMs to use for DeepEP
+
 
 # Training configurations
 export NNODES=1
@@ -154,6 +166,10 @@ TRAINING_PARAMS+=" --moe-router-pre-softmax"
 if [[ "${MOE_GROUPED_GEMM}" == "true" ]]; then
     TRAINING_PARAMS+=" --moe-grouped-gemm"
 fi
+if [[ "${MOE_ENABLE_DEEPEP}" == "true" ]]; then
+    TRAINING_PARAMS+=" --moe-enable-deepep"
+    TRAINING_PARAMS+=" --moe-deepep-num-sms ${MOE_DEEPEP_NUM_SMS}"
+fi
 TRAINING_PARAMS+=" --moe-aux-loss-coeff 1e-3"
 TRAINING_PARAMS+=" --moe-router-topk-scaling-factor 1.0"
 TRAINING_PARAMS+=" --moe-router-dtype fp32"
@@ -187,8 +203,11 @@ TRAINING_PARAMS+=" --log-validation-ppl-to-tensorboard"
 TRAINING_PARAMS+=" --log-throughput"
 TRAINING_PARAMS+=" --log-interval 1"
 TRAINING_PARAMS+=" --tensorboard-dir ${OUTPUT_PATH}/tensorboard"
-TRAINING_PARAMS+=" --wandb-project ${WANDB_PROJECT}"
-TRAINING_PARAMS+=" --wandb-exp-name DeepSeek-V2-TP${TP}PP${PP}EP${EP}CP${CP}VPP${VPP}-MBS${MBS}GBS${GBS}-${COMMENT}"
+# Add wandb parameters only if not disabled
+if [[ "${DISABLE_WANDB}" != "true" ]]; then
+  TRAINING_PARAMS+=" --wandb-project ${WANDB_PROJECT}"
+  TRAINING_PARAMS+=" --wandb-exp-name DeepSeek-V2-TP${TP}PP${PP}EP${EP}CP${CP}VPP${VPP}-MBS${MBS}GBS${GBS}-${COMMENT}"
+fi
 TRAINING_PARAMS+=" --bf16"
 
 # Add overlapping parameters (since A2A_OVERLAP is not set, use default overlap settings)
