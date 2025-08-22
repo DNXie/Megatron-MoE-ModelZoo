@@ -56,10 +56,17 @@ export NUM_LAYERS=27
 # export MOE_GROUPED_GEMM="true"
 
 # MoE configurations
-export MOE_TOKEN_DISPATCHER="flex"  # [flex, alltoall, allgather]
+export MOE_TOKEN_DISPATCHER="alltoall"  # [flex, alltoall, allgather]
 export MOE_GROUPED_GEMM="true"
 export MOE_ENABLE_DEEPEP="true"  # requires flex dispatcher
 export MOE_DEEPEP_NUM_SMS=32  # Number of SMs to use for DeepEP
+
+
+if [[ "${MOE_ENABLE_DEEPEP}" == "true" ]]; then
+    MOE_TOKEN_DISPATCHER="flex"
+else
+    MOE_TOKEN_DISPATCHER="alltoall"
+fi
 
 
 # Training configurations
@@ -169,6 +176,7 @@ fi
 if [[ "${MOE_ENABLE_DEEPEP}" == "true" ]]; then
     TRAINING_PARAMS+=" --moe-enable-deepep"
     TRAINING_PARAMS+=" --moe-deepep-num-sms ${MOE_DEEPEP_NUM_SMS}"
+    export MOE_TOKEN_DISPATCHER="flex"
 fi
 TRAINING_PARAMS+=" --moe-aux-loss-coeff 1e-3"
 TRAINING_PARAMS+=" --moe-router-topk-scaling-factor 1.0"
