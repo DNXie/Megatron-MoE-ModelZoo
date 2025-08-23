@@ -73,7 +73,7 @@ export MEGATRON_PATH=$HOME_DIR/"Megatron-LM"
 
 
 # export DATA_PATH=$HOME_DIR/"datasets/slimpajama_15k/slimpajama_15k_text_document"
-export DATA_PATH=$HOME_DIR/"datasets/wikitext_full/wikitext_text_document"
+export DATA_PATH=$HOME_DIR/"datasets/wikitext/wikitext_text_document"
 export TOKENIZER_TYPE="HuggingFaceTokenizer"
 export TOKENIZER_MODEL="$HOME_DIR/models/deepseek-v2/tokenizer"   # if load from local
 # export TOKENIZER_MODEL="deepseek-ai/DeepSeek-V2"    # if pulling from hugging face
