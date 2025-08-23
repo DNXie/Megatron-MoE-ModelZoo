@@ -5,11 +5,38 @@ set -euxo pipefail
 # This script contains hardcoded values from model_configs/benchmarking/DeepSeek-V2-Lite.yaml
 # and runtime_configs/benchmarking/runtime.conf and common.conf
 
-# Parse command line arguments for HOME_DIR and MAST flag
-HOME_DIR="/home/$USER"  # default value
-DISABLE_WANDB=false     # default: wandb enabled
+# Default values (can be overridden by command line args)
+NNODES=1
+NODE_RANK=0
+NPROC_PER_NODE=8
+MASTER_ADDR="127.0.0.1"
+MASTER_PORT=6000
+HOME_DIR="/home/$USER"
+DISABLE_WANDB=true
+
+# Parse command-line args
 for arg in "$@"; do
   case $arg in
+    --nnodes=*)
+      NNODES="${arg#*=}"
+      shift
+      ;;
+    --node_rank=*)
+      NODE_RANK="${arg#*=}"
+      shift
+      ;;
+    --nproc_per_node=*)
+      NPROC_PER_NODE="${arg#*=}"
+      shift
+      ;;
+    --master_addr=*)
+      MASTER_ADDR="${arg#*=}"
+      shift
+      ;;
+    --master_port=*)
+      MASTER_PORT="${arg#*=}"
+      shift
+      ;;
     --home=*)
       HOME_DIR="${arg#*=}"
       shift
@@ -18,8 +45,22 @@ for arg in "$@"; do
       DISABLE_WANDB=true
       shift
       ;;
+    *)
+      echo "Unknown option: $arg"
+      exit 1
+      ;;
   esac
 done
+
+# If running under SLURM, auto-fill values if not explicitly set
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  NNODES=${SLURM_NNODES:-$NNODES}
+  NODE_RANK=${SLURM_NODEID:-$NODE_RANK}
+  if [[ "$MASTER_ADDR" == "127.0.0.1" ]]; then
+    MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
+  fi
+fi
+
 
 # Basic configuration
 export MODEL="DeepSeek-V2"
@@ -70,7 +111,7 @@ fi
 
 
 # Training configurations
-export NNODES=1
+# export NNODES=1
 export RUN_TIME="00:20:00"
 export PRETRAIN=0
 
@@ -221,16 +262,30 @@ TRAINING_PARAMS+=" --bf16"
 # Add overlapping parameters (since A2A_OVERLAP is not set, use default overlap settings)
 TRAINING_PARAMS+=" --overlap-grad-reduce --overlap-param-gather"
 
-# Append any command line arguments to TRAINING_PARAMS
-if [[ $# -gt 0 ]]; then
-    TRAINING_PARAMS="${TRAINING_PARAMS} $@"
-fi
+# # Append any command line arguments to TRAINING_PARAMS
+# if [[ $# -gt 0 ]]; then
+#     TRAINING_PARAMS="${TRAINING_PARAMS} $@"
+# fi
 
 # Set default output path if not set
 export OUTPUT_PATH=${OUTPUT_PATH:-"${WORKSPACE}/outputs"}
 
 # Export training command with distributed launch
-export TRAINING_CMD="CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 ${TRAINING_SCRIPT_PATH} ${TRAINING_PARAMS}"
+# export TRAINING_CMD="CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 ${TRAINING_SCRIPT_PATH} ${TRAINING_PARAMS}"
+# ---- Build TRAINING_CMD ----
+TRAINING_CMD="torchrun --nproc_per_node=${NPROC_PER_NODE}"
+
+# Add distributed args only if set
+[[ -n "$NNODES" ]]      && TRAINING_CMD+=" --nnodes=${NNODES}"
+[[ -n "$NODE_RANK" ]]   && TRAINING_CMD+=" --node_rank=${NODE_RANK}"
+[[ -n "$MASTER_ADDR" ]] && TRAINING_CMD+=" --master_addr=${MASTER_ADDR}"
+[[ -n "$MASTER_PORT" ]] && TRAINING_CMD+=" --master_port=${MASTER_PORT}"
+
+TRAINING_CMD+=" ${TRAINING_SCRIPT_PATH} ${TRAINING_PARAMS}"
+
+export TRAINING_CMD
+
+
 
 # Local execution logs
 LOCAL_LOGS="${OUTPUT_PATH}/local_logs"
@@ -238,6 +293,7 @@ mkdir -p ${LOCAL_LOGS} || {
     echo "Error: Failed to create local logs directory ${LOCAL_LOGS}"
     exit 1
 }
+
 
 # Generate timestamp for log file
 TIMESTAMP=$(date +'%y%m%d_%H%M%S')
