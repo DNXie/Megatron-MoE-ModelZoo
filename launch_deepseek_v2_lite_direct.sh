@@ -275,12 +275,7 @@ export OUTPUT_PATH=${OUTPUT_PATH:-"${WORKSPACE}/outputs"}
 # Export training command with distributed launch
 # export TRAINING_CMD="CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 ${TRAINING_SCRIPT_PATH} ${TRAINING_PARAMS}"
 # ---- Build TRAINING_CMD ----
-if [[ -n "${PYTHON_BIN:-}" ]]; then
-    TRAINING_CMD="${PYTHON_BIN} -m torch.distributed.run --nproc_per_node=${NPROC_PER_NODE}"
-else
-    TRAINING_CMD="torchrun --nproc_per_node=${NPROC_PER_NODE}"
-fi
-
+TRAINING_CMD="torchrun --nproc_per_node=${NPROC_PER_NODE}"
 
 # Add distributed args only if set
 [[ -n "$NNODES" ]]      && TRAINING_CMD+=" --nnodes=${NNODES}"
