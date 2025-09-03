@@ -152,7 +152,7 @@ export LOAD_PATH="${LOAD_PATH:-}"
 
 # Environment variables (from DeepSeek-V2-Lite.yaml ENV_VARS)
 # Set CUDA_DEVICE_MAX_CONNECTIONS based on FSDP usage
-if [[ "${TORCH_FSDP}" == "true" || "${MEGATRON_FSDP}" == "true" ]]; then
+if [[ "${TORCH_FSDP}" == "true" ]]; then
     export CUDA_DEVICE_MAX_CONNECTIONS=8  # FSDP requires > 1
 else
     export CUDA_DEVICE_MAX_CONNECTIONS=1  # Default for non-FSDP
@@ -193,7 +193,7 @@ if [[ "${TORCH_FSDP}" == "true" ]]; then
     # Disable gradient accumulation fusion as it's incompatible with torch-fsdp2
     TRAINING_PARAMS+=" --no-gradient-accumulation-fusion"
 elif [[ "${MEGATRON_FSDP}" == "true" ]]; then
-    TRAINING_PARAMS+=" --use-megatron-fsdp"
+    TRAINING_PARAMS+=" --use-custom-fsdp"
 fi
 TRAINING_PARAMS+=" --use-flash-attn"
 TRAINING_PARAMS+=" --disable-bias-linear"

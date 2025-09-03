@@ -192,7 +192,7 @@ if [[ "${TORCH_FSDP}" == "true" ]]; then
     # Disable gradient accumulation fusion as it's incompatible with torch-fsdp2
     TRAINING_PARAMS+=" --no-gradient-accumulation-fusion"
 elif [[ "${MEGATRON_FSDP}" == "true" ]]; then
-    TRAINING_PARAMS+=" --use-megatron-fsdp"
+    TRAINING_PARAMS+=" --use-custom-fsdp"
 fi
 
 
