@@ -96,7 +96,7 @@ export PP=1
 # Set EP based on torch_fsdp flag
 if [[ "${TORCH_FSDP}" == "true" ]]; then
     export EP=1
-    export TP=8
+    # export TP=8
 else
     export EP=8
     # export TP=1
