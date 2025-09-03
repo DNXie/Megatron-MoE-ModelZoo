@@ -13,6 +13,8 @@ MASTER_ADDR="127.0.0.1"
 MASTER_PORT=6000
 HOME_DIR="/home/$USER"
 DISABLE_WANDB=true
+TORCH_FSDP=false
+MEGATRON_FSDP=false
 
 # Parse command-line args
 for arg in "$@"; do
@@ -49,6 +51,14 @@ for arg in "$@"; do
       echo "Unknown option: $arg"
       exit 1
       ;;
+    --torch_fsdp)
+      TORCH_FSDP=true
+      shift
+      ;;
+    --megatron_fsdp)
+      MEGATRON_FSDP=true
+      shift
+      ;;
   esac
 done
 
@@ -81,7 +91,12 @@ export TOKENIZER_MODEL="$HOME_DIR/models/deepseek-v3/tokenizer"   # if load from
 # Parallelism configurations (from runtime.conf DeepSeek-V3 config)
 export TP=1
 export PP=16
-export EP=64
+# Set EP based on torch_fsdp flag
+if [[ "${TORCH_FSDP}" == "true" ]]; then
+    export EP=1
+else
+    export EP=64
+fi
 export CP=1
 export VPP=1
 
@@ -135,7 +150,12 @@ export OUTPUT_PATH="${OUTPUT_PATH:-${WORKSPACE}/outputs}"
 export LOAD_PATH="${LOAD_PATH:-}"
 
 # Environment variables (from DeepSeek-V3.yaml ENV_VARS)
-export CUDA_DEVICE_MAX_CONNECTIONS=1
+# Set CUDA_DEVICE_MAX_CONNECTIONS based on FSDP usage
+if [[ "${TORCH_FSDP}" == "true" || "${MEGATRON_FSDP}" == "true" ]]; then
+    export CUDA_DEVICE_MAX_CONNECTIONS=8  # FSDP requires > 1
+else
+    export CUDA_DEVICE_MAX_CONNECTIONS=1  # Default for non-FSDP
+fi
 # Remove deprecated TORCH_NCCL_AVOID_RECORD_STREAMS (now default)
 # export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 export NVTE_ALLOW_NONDETERMINISTIC_ALGO=1
@@ -154,10 +174,28 @@ TRAINING_PARAMS+=" --pipeline-model-parallel-size ${PP}"
 TRAINING_PARAMS+=" --expert-model-parallel-size ${EP}"
 TRAINING_PARAMS+=" --context-parallel-size ${CP}"
 TRAINING_PARAMS+=" --expert-tensor-parallel-size 1"
-TRAINING_PARAMS+=" --use-distributed-optimizer"
+
+# Add overlapping parameters (since A2A_OVERLAP is not set, use default overlap settings)
+TRAINING_PARAMS+=" --overlap-grad-reduce"
+
+# Add distributed optimizer only if torch_fsdp is disabled (they're incompatible)
+if [[ "${TORCH_FSDP}" != "true" ]]; then
+    TRAINING_PARAMS+=" --use-distributed-optimizer"
+    TRAINING_PARAMS+=" --overlap-param-gather"
+fi
 TRAINING_PARAMS+=" --use-mcore-models"
 # Remove sequence-parallel since TP=1 (causes warning)
 # TRAINING_PARAMS+=" --sequence-parallel"
+# Add FSDP flags based on which type is enabled
+if [[ "${TORCH_FSDP}" == "true" ]]; then
+    TRAINING_PARAMS+=" --use-torch-fsdp2"
+    # Disable gradient accumulation fusion as it's incompatible with torch-fsdp2
+    TRAINING_PARAMS+=" --no-gradient-accumulation-fusion"
+elif [[ "${MEGATRON_FSDP}" == "true" ]]; then
+    TRAINING_PARAMS+=" --use-megatron-fsdp"
+fi
+
+
 TRAINING_PARAMS+=" --use-flash-attn"
 TRAINING_PARAMS+=" --disable-bias-linear"
 TRAINING_PARAMS+=" --micro-batch-size ${MBS}"
@@ -260,9 +298,6 @@ if [[ "${DISABLE_WANDB}" != "true" ]]; then
   TRAINING_PARAMS+=" --wandb-exp-name DeepSeek-V3-TP${TP}PP${PP}EP${EP}CP${CP}VPP${VPP}-MBS${MBS}GBS${GBS}-${COMMENT}"
 fi
 TRAINING_PARAMS+=" --bf16"
-
-# Add overlapping parameters (since A2A_OVERLAP is not set, use default overlap settings)
-TRAINING_PARAMS+=" --overlap-grad-reduce --overlap-param-gather"
 
 # # Append any command line arguments to TRAINING_PARAMS
 # if [[ $# -gt 0 ]]; then
