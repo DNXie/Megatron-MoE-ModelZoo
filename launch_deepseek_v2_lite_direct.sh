@@ -106,7 +106,7 @@ export VPP=1
 
 # Batch size configurations
 export MBS=1
-export GBS=512
+export GBS=${GBS:-"512"}
 
 # Model architecture configurations
 export NUM_LAYERS=27
@@ -118,6 +118,7 @@ export NUM_LAYERS=27
 # MoE configurations
 export MOE_GROUPED_GEMM="true"
 export MOE_ENABLE_DEEPEP="true"  # requires flex dispatcher
+# export MOE_ENABLE_DEEPEP="false"  # requires flex dispatcher
 export MOE_DEEPEP_NUM_SMS=32  # Number of SMs to use for DeepEP
 
 
