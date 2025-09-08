@@ -47,10 +47,6 @@ for arg in "$@"; do
       DISABLE_WANDB=true
       shift
       ;;
-    *)
-      echo "Unknown option: $arg"
-      exit 1
-      ;;
     --torch_fsdp)
       TORCH_FSDP=true
       shift
@@ -58,6 +54,10 @@ for arg in "$@"; do
     --megatron_fsdp)
       MEGATRON_FSDP=true
       shift
+      ;;
+    *)
+      echo "Unknown option: $arg"
+      exit 1
       ;;
   esac
 done

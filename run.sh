@@ -28,7 +28,7 @@ export FI_EFA_SET_CUDA_SYNC_MEMOPS=0
 
 
 eval "$(/home/ubuntu/miniconda3/bin/conda shell.bash hook)"
-conda activate titan
+conda activate mega
 
 # Master address/port
 MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
