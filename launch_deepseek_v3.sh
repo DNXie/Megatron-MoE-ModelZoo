@@ -47,6 +47,10 @@ for arg in "$@"; do
       DISABLE_WANDB=true
       shift
       ;;
+    *)
+      echo "Unknown option: $arg"
+      exit 1
+      ;;
     --torch_fsdp)
       TORCH_FSDP=true
       shift
@@ -54,10 +58,6 @@ for arg in "$@"; do
     --megatron_fsdp)
       MEGATRON_FSDP=true
       shift
-      ;;
-    *)
-      echo "Unknown option: $arg"
-      exit 1
       ;;
   esac
 done
@@ -117,11 +117,12 @@ export NUM_LAYERS=61
 export MOE_TOKEN_DISPATCHER="alltoall"  # [flex, alltoall, allgather]
 export MOE_GROUPED_GEMM="true"
 export MOE_ENABLE_DEEPEP="true"  # requires flex dispatcher
-export MOE_ENABLE_DEEPEP="false"  # requires flex dispatcher
-# export MOE_DEEPEP_NUM_SMS=32  # Number of SMs to use for DeepEP
+export MOE_DEEPEP_NUM_SMS=32  # Number of SMs to use for DeepEP
 
 
 if [[ "${MOE_ENABLE_DEEPEP}" == "true" ]]; then
+    MOE_TOKEN_DISPATCHER="flex"
+else
     MOE_TOKEN_DISPATCHER="flex"
 fi
 
@@ -149,63 +150,33 @@ export OUTPUT_PATH="${OUTPUT_PATH:-${WORKSPACE}/outputs}"
 export LOAD_PATH="${LOAD_PATH:-}"
 
 # Environment variables (from DeepSeek-V3.yaml ENV_VARS)
+export TORCH_NCCL_AVOID_RECORD_STREAMS=0
+export NVTE_ALLOW_NONDETERMINISTIC_ALGO=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+export NCCL_NVLS_ENABLE=0
+export NVTE_FUSED_ATTN=1
+export NVTE_NORM_FWD_USE_CUDNN=1
+export NVTE_NORM_BWD_USE_CUDNN=1
+export PYTHONWARNINGS="ignore"
+export NCCL_DEBUG="VERSION"
+
 # Set CUDA_DEVICE_MAX_CONNECTIONS based on FSDP usage
 if [[ "${TORCH_FSDP}" == "true" || "${MEGATRON_FSDP}" == "true" ]]; then
     export CUDA_DEVICE_MAX_CONNECTIONS=8  # FSDP requires > 1
 else
     export CUDA_DEVICE_MAX_CONNECTIONS=1  # Default for non-FSDP
 fi
-# Remove deprecated TORCH_NCCL_AVOID_RECORD_STREAMS (now default)
-# export TORCH_NCCL_AVOID_RECORD_STREAMS=1
-export NVTE_ALLOW_NONDETERMINISTIC_ALGO=1
-export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
-export NCCL_NVLS_ENABLE=0
-export NVTE_FUSED_ATTN=1
-
-# Additional environment variables for overlapping
-export NVTE_FWD_LAYERNORM_SM_MARGIN=0
-export NVTE_BWD_LAYERNORM_SM_MARGIN=0
-
-
-TRAINING_PARAMS=""
-######### NVIDIA RECOMMENTDATION
-# OPTIMIZER_OFFLOAD=0 A2A_OVERLAP=0 MODEL=DeepSeek-V3 PP=8 VPP=4 TP=1 EP=8 CP=1 NNODES=16 GBS=8192 PR=fp8 \ 
-# bash sbatch_benchmarking.sh --recompute-granularity selective --recompute-modules mla_up_proj moe_act layernorm --pipeline-model-parallel-layout "Et*2|(tt|)*22t|(tt|)*7L"
-
-
-export OPTIMIZER_OFFLOAD=0
-export A2A_OVERLAP=0
-export MODEL="DeepSeek-V3"
-export PP=8
-export VPP=4
-export TP=1 
-export EP=8 
-export CP=1 
-# export NNODES=16 # comes in through slurm 
-export GBS=8192
-export PR="fp8"
-
-TRAINING_PARAMS+=' --recompute-granularity selective --recompute-modules mla_up_proj moe_act layernorm --pipeline-model-parallel-layout "Et*2|(tt|)*22t|(tt|)*7L"'
-
-###############################
-
 
 # Build training parameters (from DeepSeek-V3.yaml MODEL_ARGS)
-TRAINING_PARAMS+=" --distributed-timeout-minutes 60"
+TRAINING_PARAMS="--distributed-timeout-minutes 60"
 TRAINING_PARAMS+=" --tensor-model-parallel-size ${TP}"
 TRAINING_PARAMS+=" --pipeline-model-parallel-size ${PP}"
 TRAINING_PARAMS+=" --expert-model-parallel-size ${EP}"
 TRAINING_PARAMS+=" --context-parallel-size ${CP}"
 TRAINING_PARAMS+=" --expert-tensor-parallel-size 1"
+TRAINING_PARAMS+=" --use-distributed-optimizer"
 
-# Add overlapping parameters (since A2A_OVERLAP is not set, use default overlap settings)
-TRAINING_PARAMS+=" --overlap-grad-reduce"
-
-# Add distributed optimizer only if torch_fsdp is disabled (they're incompatible)
-if [[ "${TORCH_FSDP}" != "true" ]]; then
-    TRAINING_PARAMS+=" --use-distributed-optimizer"
-    TRAINING_PARAMS+=" --overlap-param-gather"
-fi
+# Training args
 TRAINING_PARAMS+=" --use-mcore-models"
 # Remove sequence-parallel since TP=1 (causes warning)
 # TRAINING_PARAMS+=" --sequence-parallel"
@@ -223,11 +194,14 @@ TRAINING_PARAMS+=" --use-flash-attn"
 TRAINING_PARAMS+=" --disable-bias-linear"
 TRAINING_PARAMS+=" --micro-batch-size ${MBS}"
 TRAINING_PARAMS+=" --global-batch-size ${GBS}"
-TRAINING_PARAMS+=" --train-iters 100"
-TRAINING_PARAMS+=" --exit-duration-in-mins 230"
-TRAINING_PARAMS+=" --no-bias-swiglu-fusion"
+TRAINING_PARAMS+=" --train-samples 100"
+TRAINING_PARAMS+=" --exit-duration-in-mins 220"
+TRAINING_PARAMS+=" --no-save-optim"
 TRAINING_PARAMS+=" --no-check-for-nan-in-loss-and-grad"
-TRAINING_PARAMS+=" --no-rope-fusion"
+TRAINING_PARAMS+=" --cross-entropy-loss-fusion"
+TRAINING_PARAMS+=" --cross-entropy-fusion-impl te"
+TRAINING_PARAMS+=" --manual-gc"
+TRAINING_PARAMS+=" --manual-gc-interval 10"
 TRAINING_PARAMS+=" --transformer-impl transformer_engine"
 TRAINING_PARAMS+=" --seq-length ${SEQ_LEN}"
 TRAINING_PARAMS+=" --data-cache-path ${WORKSPACE}/data_cache"
@@ -239,14 +213,14 @@ TRAINING_PARAMS+=" --no-mmap-bin-files"
 TRAINING_PARAMS+=" --no-create-attention-mask-in-dataloader"
 TRAINING_PARAMS+=" --num-workers 6"
 TRAINING_PARAMS+=" --num-layers ${NUM_LAYERS}"
-TRAINING_PARAMS+=" --hidden-size 2048"
-TRAINING_PARAMS+=" --ffn-hidden-size 10944"
-TRAINING_PARAMS+=" --num-attention-heads 16"
+TRAINING_PARAMS+=" --hidden-size 7168"
+TRAINING_PARAMS+=" --ffn-hidden-size 18432"
+TRAINING_PARAMS+=" --num-attention-heads 128"
 TRAINING_PARAMS+=" --kv-channels 128"
 TRAINING_PARAMS+=" --max-position-embeddings 4096"
 TRAINING_PARAMS+=" --position-embedding-type rope"
 TRAINING_PARAMS+=" --rotary-base 10000"
-TRAINING_PARAMS+=" --make-vocab-size-divisible-by 3200"
+TRAINING_PARAMS+=" --make-vocab-size-divisible-by 3232"
 TRAINING_PARAMS+=" --normalization RMSNorm"
 TRAINING_PARAMS+=" --norm-epsilon 1e-6"
 TRAINING_PARAMS+=" --swiglu"
@@ -257,20 +231,20 @@ TRAINING_PARAMS+=" --hidden-dropout 0.0"
 TRAINING_PARAMS+=" --clip-grad 1.0"
 TRAINING_PARAMS+=" --weight-decay 0.1"
 TRAINING_PARAMS+=" --qk-layernorm"
-TRAINING_PARAMS+=" --lr-decay-iters 90"
-TRAINING_PARAMS+=" --lr-warmup-iters 10"
-TRAINING_PARAMS+=" --lr-warmup-init 1.3e-7"
-TRAINING_PARAMS+=" --lr 1.3e-6"
-TRAINING_PARAMS+=" --min-lr 1.3e-7"
+TRAINING_PARAMS+=" --lr-decay-samples 90"
+TRAINING_PARAMS+=" --lr-warmup-samples 10"
+TRAINING_PARAMS+=" --lr-warmup-init 3.9e-7"
+TRAINING_PARAMS+=" --lr 3.9e-6"
+TRAINING_PARAMS+=" --min-lr 3.9e-7"
 TRAINING_PARAMS+=" --lr-decay-style cosine"
 TRAINING_PARAMS+=" --adam-beta1 0.9"
 TRAINING_PARAMS+=" --adam-beta2 0.95"
-TRAINING_PARAMS+=" --num-experts 64"
-TRAINING_PARAMS+=" --moe-layer-freq [0]+[1]*60"
-TRAINING_PARAMS+=" --moe-ffn-hidden-size 1408"
-TRAINING_PARAMS+=" --moe-shared-expert-intermediate-size 2816"
+TRAINING_PARAMS+=" --num-experts 256"
+TRAINING_PARAMS+=" --moe-layer-freq ([0]*3+[1]*58)"
+TRAINING_PARAMS+=" --moe-ffn-hidden-size 2048"
+TRAINING_PARAMS+=" --moe-shared-expert-intermediate-size 2048"
 TRAINING_PARAMS+=" --moe-router-load-balancing-type seq_aux_loss"
-TRAINING_PARAMS+=" --moe-router-topk 6"
+TRAINING_PARAMS+=" --moe-router-topk 8"
 TRAINING_PARAMS+=" --moe-token-dispatcher-type ${MOE_TOKEN_DISPATCHER}"
 TRAINING_PARAMS+=" --moe-router-pre-softmax"
 # Add moe-grouped-gemm flag if enabled
@@ -282,20 +256,30 @@ if [[ "${MOE_ENABLE_DEEPEP}" == "true" ]]; then
     TRAINING_PARAMS+=" --moe-deepep-num-sms ${MOE_DEEPEP_NUM_SMS}"
     export MOE_TOKEN_DISPATCHER="flex"
 fi
-TRAINING_PARAMS+=" --moe-aux-loss-coeff 1e-3"
-TRAINING_PARAMS+=" --moe-router-topk-scaling-factor 1.0"
+TRAINING_PARAMS+=" --moe-aux-loss-coeff 1e-4"
+TRAINING_PARAMS+=" --moe-router-group-topk 4"
+TRAINING_PARAMS+=" --moe-router-num-groups 8"
+TRAINING_PARAMS+=" --moe-router-topk-scaling-factor 2.5"
+TRAINING_PARAMS+=" --moe-router-score-function sigmoid"
+TRAINING_PARAMS+=" --moe-router-enable-expert-bias"
+TRAINING_PARAMS+=" --moe-router-bias-update-rate 1e-3"
 TRAINING_PARAMS+=" --moe-router-dtype fp32"
 TRAINING_PARAMS+=" --moe-permute-fusion"
+TRAINING_PARAMS+=" --q-lora-rank 1536"
 TRAINING_PARAMS+=" --kv-lora-rank 512"
 TRAINING_PARAMS+=" --qk-head-dim 128"
 TRAINING_PARAMS+=" --qk-pos-emb-head-dim 64"
 TRAINING_PARAMS+=" --v-head-dim 128"
 TRAINING_PARAMS+=" --rotary-scaling-factor 40"
-TRAINING_PARAMS+=" --mscale 0.707"
-TRAINING_PARAMS+=" --mscale-all-dim 0.707"
+TRAINING_PARAMS+=" --mscale 1.0"
+TRAINING_PARAMS+=" --mscale-all-dim 1.0"
+TRAINING_PARAMS+=" --mtp-num-layers 1"
+TRAINING_PARAMS+=" --mtp-loss-scaling-factor 0.1"
 TRAINING_PARAMS+=" --eval-iters 32"
 TRAINING_PARAMS+=" --eval-interval 200"
-TRAINING_PARAMS+=" --finetune"
+TRAINING_PARAMS+=" --finetune false"
+TRAINING_PARAMS+=" --no-load-optim"
+TRAINING_PARAMS+=" --no-load-rng"
 TRAINING_PARAMS+=" --auto-detect-ckpt-format"
 
 # Add load path if specified
