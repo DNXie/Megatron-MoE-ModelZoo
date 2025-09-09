@@ -95,7 +95,7 @@ MODEL_ARGS:
   --adam-beta2: 0.95
 
   # Add MoE args
-  --num-experts: 256
+  --num-experts: 64
   --moe-layer-freq: ([0]*3+[1]*58)
   --moe-ffn-hidden-size: 2048
   --moe-shared-expert-intermediate-size: 2048
