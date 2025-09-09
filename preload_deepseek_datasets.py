@@ -143,7 +143,7 @@ def get_args():
     parser.add_argument(
         "--megatron-path",
         type=str,
-        default="/home/dxie/Megatron-LM",
+        default="/home/ubuntu/Megatron-LM",
         help="Path to Megatron-LM repository",
     )
 
@@ -270,7 +270,7 @@ def download_and_convert_dataset(args):
 
     elif args.dataset == "wikitext":
         # Handle local wikitext dataset
-        wikitext_path = "/home/dxie/datasets/wikitext/wikitext_train.jsonl"
+        wikitext_path = "/home/ubuntu/datasets/wikitext/wikitext_train.jsonl"
         if not os.path.exists(wikitext_path):
             raise FileNotFoundError(
                 f"Wikitext dataset not found at {wikitext_path}. Please run download_wikitext.py first."

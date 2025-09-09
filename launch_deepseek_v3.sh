@@ -47,10 +47,6 @@ for arg in "$@"; do
       DISABLE_WANDB=true
       shift
       ;;
-    *)
-      echo "Unknown option: $arg"
-      exit 1
-      ;;
     --torch_fsdp)
       TORCH_FSDP=true
       shift
@@ -58,6 +54,10 @@ for arg in "$@"; do
     --megatron_fsdp)
       MEGATRON_FSDP=true
       shift
+      ;;
+    *)
+      echo "Unknown option: $arg"
+      exit 1
       ;;
   esac
 done
@@ -117,12 +117,11 @@ export NUM_LAYERS=61
 export MOE_TOKEN_DISPATCHER="alltoall"  # [flex, alltoall, allgather]
 export MOE_GROUPED_GEMM="true"
 export MOE_ENABLE_DEEPEP="true"  # requires flex dispatcher
-export MOE_DEEPEP_NUM_SMS=32  # Number of SMs to use for DeepEP
+export MOE_ENABLE_DEEPEP="false"  # requires flex dispatcher
+# export MOE_DEEPEP_NUM_SMS=32  # Number of SMs to use for DeepEP
 
 
 if [[ "${MOE_ENABLE_DEEPEP}" == "true" ]]; then
-    MOE_TOKEN_DISPATCHER="flex"
-else
     MOE_TOKEN_DISPATCHER="flex"
 fi
 
@@ -167,8 +166,32 @@ export NVTE_FUSED_ATTN=1
 export NVTE_FWD_LAYERNORM_SM_MARGIN=0
 export NVTE_BWD_LAYERNORM_SM_MARGIN=0
 
+
+TRAINING_PARAMS=""
+######### NVIDIA RECOMMENTDATION
+# OPTIMIZER_OFFLOAD=0 A2A_OVERLAP=0 MODEL=DeepSeek-V3 PP=8 VPP=4 TP=1 EP=8 CP=1 NNODES=16 GBS=8192 PR=fp8 \ 
+# bash sbatch_benchmarking.sh --recompute-granularity selective --recompute-modules mla_up_proj moe_act layernorm --pipeline-model-parallel-layout "Et*2|(tt|)*22t|(tt|)*7L"
+
+
+export OPTIMIZER_OFFLOAD=0
+export A2A_OVERLAP=0
+export MODEL="DeepSeek-V3"
+export PP=8
+export VPP=4
+export TP=1 
+export EP=8 
+export CP=1 
+# export NNODES=16 # comes in through slurm 
+export GBS=8192
+export PR="fp8"
+
+TRAINING_PARAMS+=' --recompute-granularity selective --recompute-modules mla_up_proj moe_act layernorm --pipeline-model-parallel-layout "Et*2|(tt|)*22t|(tt|)*7L"'
+
+###############################
+
+
 # Build training parameters (from DeepSeek-V3.yaml MODEL_ARGS)
-TRAINING_PARAMS="--distributed-timeout-minutes 60"
+TRAINING_PARAMS+=" --distributed-timeout-minutes 60"
 TRAINING_PARAMS+=" --tensor-model-parallel-size ${TP}"
 TRAINING_PARAMS+=" --pipeline-model-parallel-size ${PP}"
 TRAINING_PARAMS+=" --expert-model-parallel-size ${EP}"
@@ -242,8 +265,8 @@ TRAINING_PARAMS+=" --min-lr 1.3e-7"
 TRAINING_PARAMS+=" --lr-decay-style cosine"
 TRAINING_PARAMS+=" --adam-beta1 0.9"
 TRAINING_PARAMS+=" --adam-beta2 0.95"
-TRAINING_PARAMS+=" --num-experts 256"
-TRAINING_PARAMS+=" --moe-layer-freq [0]+[1]*26"
+TRAINING_PARAMS+=" --num-experts 64"
+TRAINING_PARAMS+=" --moe-layer-freq [0]+[1]*60"
 TRAINING_PARAMS+=" --moe-ffn-hidden-size 1408"
 TRAINING_PARAMS+=" --moe-shared-expert-intermediate-size 2816"
 TRAINING_PARAMS+=" --moe-router-load-balancing-type seq_aux_loss"

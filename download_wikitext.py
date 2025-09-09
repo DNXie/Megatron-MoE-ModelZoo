@@ -4,7 +4,7 @@ import os
 from datasets import load_dataset
 
 # Load env var for output
-output_path = "/home/dxie/datasets/wikitext/wikitext_train.jsonl"
+output_path = "/home/ubuntu/datasets/wikitext/wikitext_train.jsonl"
 # Load the dataset
 dataset = load_dataset("Salesforce/wikitext", "wikitext-103-v1", split="train")
 # Step 3: Write as JSONL (each entry: {"text": <paragraph>})
